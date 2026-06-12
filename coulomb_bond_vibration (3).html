@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>쿨롱 모델 결합 진동 시뮬레이션</title>
+<style>
+  :root{
+    --paper:#FAF8F3;
+    --grid:#E7E2D4;
+    --ink:#23293A;
+    --ink-soft:#6B7280;
+    --nucleus-a:#2E6F6B;
+    --nucleus-b:#C0533F;
+    --electron:#5B5470;
+    --line:#C9C3B2;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size:24px 24px;
+    color:var(--ink);
+    font-family: Georgia, 'Times New Roman', serif;
+    padding:28px 18px 60px;
+  }
+  .wrap{ max-width:920px; margin:0 auto; }
+  header{ border-bottom:2px solid var(--ink); padding-bottom:14px; margin-bottom:22px; }
+  header .eyebrow{
+    font-family:'Courier New', monospace; font-size:12px; letter-spacing:.18em;
+    color:var(--ink-soft); text-transform:uppercase; margin:0 0 6px;
+  }
+  h1{ margin:0; font-size:26px; font-weight:600; }
+  .sub{ margin:6px 0 0; color:var(--ink-soft); font-size:14.5px; font-family:'Courier New',monospace; }
+
+  .grid{ display:grid; grid-template-columns: 1fr 1fr; gap:22px; min-width:0; }
+  @media (max-width:760px){ .grid{ grid-template-columns:1fr; } }
+
+  .panel{
+    background:#fff; border:1px solid var(--ink); border-radius:2px;
+    padding:18px 20px; min-width:0; overflow:hidden;
+  }
+  .panel h2{
+    font-size:13px; letter-spacing:.14em; text-transform:uppercase;
+    font-family:'Courier New',monospace; color:var(--ink-soft);
+    margin:0 0 14px; border-bottom:1px solid var(--grid); padding-bottom:8px;
+  }
+
+  .slider-grid{ display:grid; grid-template-columns:repeat(2,1fr); gap:0 18px; min-width:0; }
+  @media (max-width:480px){ .slider-grid{ grid-template-columns:1fr; } }
+  .slider-row{ margin-bottom:14px; min-width:0; }
+  .slider-row label{
+    display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline;
+    gap:2px 8px; font-size:13.5px; margin-bottom:4px;
+  }
+  .slider-row .val{ font-family:'Courier New',monospace; color:var(--nucleus-b); font-weight:bold; }
+  input[type=range]{
+    width:100%; -webkit-appearance:none; height:2px; background:var(--ink);
+    border-radius:1px; outline:none; margin:6px 0 2px;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--nucleus-b); border:2px solid var(--ink); cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:14px; height:14px; border-radius:50%;
+    background:var(--nucleus-b); border:2px solid var(--ink); cursor:pointer;
+  }
+  .desc{ font-size:12px; color:var(--ink-soft); font-family:'Courier New',monospace; }
+
+  canvas{ display:block; width:100%; background:#fff; border:1px solid var(--grid); }
+  .scene-canvas{ height:160px; margin-bottom:12px; }
+  .trace-canvas{ height:140px; }
+
+  .readout{
+    margin-top:18px; display:grid; grid-template-columns:repeat(2,1fr); gap:10px;
+    font-family:'Courier New',monospace; font-size:13.5px; min-width:0;
+  }
+  .readout .item{ background:var(--paper); border:1px solid var(--grid); padding:8px 10px; min-width:0; overflow:hidden; }
+  .readout .item .k{ color:var(--ink-soft); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  .readout .item .v{ font-size:15px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  .formula{
+    font-family:'Courier New',monospace; font-size:13px; background:var(--paper);
+    border:1px solid var(--grid); padding:10px 12px; margin-top:14px; line-height:1.7;
+    overflow-x:auto; white-space:nowrap;
+  }
+
+  .controls-bottom{ display:flex; gap:10px; margin-top:16px; }
+  button{
+    font-family:'Courier New',monospace; font-size:13px; letter-spacing:.06em;
+    border:1px solid var(--ink); background:#fff; padding:8px 16px; cursor:pointer;
+    border-radius:2px;
+  }
+  button:hover{ background:var(--ink); color:#fff; }
+  button.active{ background:var(--ink); color:#fff; }
+
+  .warn{ color:var(--nucleus-b); font-size:12.5px; font-family:'Courier New',monospace; margin-top:8px; }
+  .note{ font-size:12.5px; color:var(--ink-soft); margin-top:14px; line-height:1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="eyebrow">Coulomb Bond Model · Simple Harmonic Approximation</p>
+    <h1>원자 신축 진동 시뮬레이션</h1>
+    <p class="sub"></p>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>변수 조절</h2>
+
+      <div class="slider-grid">
+      <div class="slider-row">
+        <label>q₁ (진동 원자 핵전하, e) <span class="val" id="v-q1"></span></label>
+        <input type="range" id="q1" min="1" max="4" step="0.1" value="1">
+        <div class="desc"></div>
+      </div>
+
+      <div class="slider-row">
+        <label>q₂ (고정 원자 핵전하, e) <span class="val" id="v-q2"></span></label>
+        <input type="range" id="q2" min="2.5" max="8" step="0.1" value="4">
+        <div class="desc"></div>
+      </div>
+
+      <div class="slider-row">
+        <label>d (전자쌍까지 거리, Å) <span class="val" id="v-d"></span></label>
+        <input type="range" id="d" min="0.6" max="1.6" step="0.01" value="1.0">
+        <div class="desc"></div>
+      </div>
+
+      <div class="slider-row">
+        <label>m (진동 원자 질량, amu) <span class="val" id="v-m"></span></label>
+        <input type="range" id="m" min="1" max="20" step="0.1" value="12">
+        <div class="desc"></div>
+      </div>
+
+      <div class="slider-row">
+        <label>x₀ (진동 진폭, Å) <span class="val" id="v-amp"></span></label>
+        <input type="range" id="amp" min="0.02" max="0.3" step="0.01" value="0.1">
+        <div class="desc"></div>
+      </div>
+
+      <div class="slider-row">
+        <label>애니메이션 속도 <span class="val" id="v-speed"></span></label>
+        <input type="range" id="speed" min="0.1" max="3" step="0.1" value="1">
+        <div class="desc">실제 ω~10¹³–10¹⁴ rad/s → 시각화용 시간 축소</div>
+      </div>
+      </div>
+
+      <div class="controls-bottom">
+        <button id="toggle">일시정지</button>
+        <button id="reset">♡</button>
+      </div>
+      <div class="warn" id="warn"></div>
+    </div>
+
+    <div class="panel">
+      <h2>진동 시각화</h2>
+      <canvas id="scene" class="scene-canvas"></canvas>
+      <canvas id="trace" class="trace-canvas"></canvas>
+
+      <div class="readout">
+        <div class="item"><div class="k">r (계산값)</div><div class="v" id="out-r">–</div></div>
+        <div class="item"><div class="k">r + d (핵간 거리)</div><div class="v" id="out-rd">–</div></div>
+        <div class="item"><div class="k">각진동수 ω</div><div class="v" id="out-omega">–</div></div>
+        <div class="item"><div class="k">진동수 f</div><div class="v" id="out-f">–</div></div>
+        <div class="item"><div class="k">파수 (1/λ)</div><div class="v" id="out-wn">–</div></div>
+        <div class="item"><div class="k">주기 T</div><div class="v" id="out-T">–</div></div>
+      </div>
+
+      <div class="formula" id="formula"></div>
+      <p class="note"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+// physical constants
+const K_COULOMB = 8.9875e9;      // N m^2 / C^2
+const E_CHARGE  = 1.602176634e-19; // C
+const AMU       = 1.66053907e-27;  // kg
+const ANGSTROM  = 1e-10;           // m
+const C_LIGHT   = 2.99792458e10;   // cm/s
+
+const els = {
+  q1: document.getElementById('q1'),
+  q2: document.getElementById('q2'),
+  d: document.getElementById('d'),
+  m: document.getElementById('m'),
+  amp: document.getElementById('amp'),
+  speed: document.getElementById('speed'),
+};
+const vals = {
+  q1: document.getElementById('v-q1'),
+  q2: document.getElementById('v-q2'),
+  d: document.getElementById('v-d'),
+  m: document.getElementById('v-m'),
+  amp: document.getElementById('v-amp'),
+  speed: document.getElementById('v-speed'),
+};
+const out = {
+  r: document.getElementById('out-r'),
+  rd: document.getElementById('out-rd'),
+  omega: document.getElementById('out-omega'),
+  f: document.getElementById('out-f'),
+  wn: document.getElementById('out-wn'),
+  T: document.getElementById('out-T'),
+};
+const warn = document.getElementById('warn');
+const formula = document.getElementById('formula');
+
+const sceneCanvas = document.getElementById('scene');
+const traceCanvas = document.getElementById('trace');
+const sctx = sceneCanvas.getContext('2d');
+const tctx = traceCanvas.getContext('2d');
+
+let state = { running:true, t:0, omega:0, animOmega:0, amp:0.1, r:0, d:1, lastTs:null, traceData:[] };
+
+function resizeCanvas(c, ctx){
+  const ratio = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w*ratio; c.height = h*ratio;
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+}
+
+function fmt(x, digits=3){
+  if (!isFinite(x)) return '–';
+  return x.toExponential(digits);
+}
+
+function compute(){
+  const q1 = parseFloat(els.q1.value);
+  const q2 = parseFloat(els.q2.value);
+  const d  = parseFloat(els.d.value);
+  const m  = parseFloat(els.m.value);
+  const amp= parseFloat(els.amp.value);
+  const speed = parseFloat(els.speed.value);
+
+  vals.q1.textContent = q1.toFixed(1)+' e';
+  vals.q2.textContent = q2.toFixed(1)+' e';
+  vals.d.textContent = d.toFixed(2)+' Å';
+  vals.m.textContent = m.toFixed(1)+' amu';
+  vals.amp.textContent = amp.toFixed(2)+' Å';
+  vals.speed.textContent = speed.toFixed(1)+'×';
+
+  const c = 1; // c = e (electron charge magnitude), fixed by definition (2c = pair charge)
+
+  if (q2 <= 2*c){
+    warn.textContent = '⚠ q₂ ≤ 2c 인 경우 r ≤ 0 이 되어 평형 조건이 성립하지 않습니다. q₂를 2보다 크게 설정하세요.';
+    out.r.textContent = out.rd.textContent = out.omega.textContent = out.f.textContent = out.wn.textContent = out.T.textContent = '–';
+    formula.textContent = '';
+    state.omega = 0;
+    return;
+  }
+  warn.textContent = '';
+
+  const r = d*(Math.sqrt(q2/(2*c)) - 1);
+  const rd = r + d;
+
+  if (amp > 0.3*Math.min(d, r)){
+    warn.textContent = '⚠ 진폭 x₀가 d 또는 r에 비해 너무 커서 "x ≪ d" 근사가 깨질 수 있습니다.';
+  }
+
+  // SI conversion
+  const q1e = q1*E_CHARGE, q2e = q2*E_CHARGE, ce = c*E_CHARGE;
+  const d_m = d*ANGSTROM, r_m = r*ANGSTROM, rd_m = rd*ANGSTROM;
+  const m_kg = m*AMU;
+
+  const numerator = 2*K_COULOMB*q1e*(q2e*d_m - 2*ce*rd_m);
+  const denom = m_kg*rd_m*rd_m*d_m*d_m;
+  const omega = Math.sqrt(numerator/denom);
+
+  const f = omega/(2*Math.PI);
+  const wavenumber = f / C_LIGHT; // cm^-1
+  const period = 2*Math.PI/omega; // seconds
+
+  out.r.textContent = r.toFixed(3)+' Å';
+  out.rd.textContent = rd.toFixed(3)+' Å';
+  out.omega.textContent = fmt(omega)+' rad/s';
+  out.f.textContent = fmt(f)+' Hz';
+  out.wn.textContent = wavenumber.toFixed(1)+' cm⁻¹';
+  out.T.textContent = fmt(period)+' s';
+
+  formula.textContent =
+    `ω = sqrt[ 2k·q₁(q₂d − 2c(r+d)) / (m(r+d)²d²) ]\n` +
+    `  q₁=${q1.toFixed(1)}e, q₂=${q2.toFixed(1)}e, c=1e, d=${d.toFixed(2)}Å, r=${r.toFixed(3)}Å, m=${m.toFixed(1)}amu\n` +
+    `  → ω ≈ ${fmt(omega,4)} rad/s,  파수 ≈ ${wavenumber.toFixed(1)} cm⁻¹`;
+
+  state.omega = omega;
+  state.amp = amp;
+  state.r = r; state.d = d;
+  // scale real omega (~1e13-1e14) down for visible animation
+  state.animOmega = omega * 1e-13 * speed;
+}
+
+function drawScene(x_disp){
+  resizeCanvas(sceneCanvas, sctx);
+  const w = sceneCanvas.clientWidth, h = sceneCanvas.clientHeight;
+  sctx.clearRect(0,0,w,h);
+
+  const midY = h/2;
+  // fixed nucleus A on left
+  const ax = w*0.18;
+  // electron pair cloud (center-ish)
+  const ex = w*0.5;
+  // oscillating nucleus B baseline
+  const bxBase = w*0.78;
+  const amplitudePx = (state.amp / Math.max(state.d,0.01)) * (w*0.12); // scale amplitude visually
+  const bx = bxBase + x_disp*amplitudePx*5;
+
+  // bond line
+  sctx.strokeStyle = '#C9C3B2';
+  sctx.lineWidth = 2;
+  sctx.beginPath();
+  sctx.moveTo(ax, midY); sctx.lineTo(bx, midY);
+  sctx.stroke();
+
+  // nucleus A (fixed, q2 - farther from electron pair)
+  sctx.fillStyle = '#2E6F6B';
+  sctx.beginPath(); sctx.arc(ax, midY, 18, 0, Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#fff'; sctx.font='12px Courier New'; sctx.textAlign='center'; sctx.textBaseline='middle';
+  sctx.fillText('q₂', ax, midY);
+
+  // electron pair cloud
+  sctx.fillStyle = 'rgba(91,84,112,0.18)';
+  sctx.beginPath(); sctx.arc(ex, midY, 26, 0, Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#5B5470';
+  sctx.beginPath(); sctx.arc(ex-5, midY, 5, 0, Math.PI*2); sctx.fill();
+  sctx.beginPath(); sctx.arc(ex+5, midY, 5, 0, Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#5B5470'; sctx.font='11px Courier New';
+  sctx.fillText('2c', ex, midY+34);
+
+  // nucleus B (oscillating, q1 - closer to electron pair)
+  sctx.fillStyle = '#C0533F';
+  sctx.beginPath(); sctx.arc(bx, midY, 18, 0, Math.PI*2); sctx.fill();
+  sctx.fillStyle = '#fff'; sctx.font='12px Courier New';
+  sctx.fillText('q₁', bx, midY);
+
+  // labels
+  sctx.fillStyle = '#6B7280'; sctx.font='11px Courier New';
+  sctx.fillText('d (평형)', (ex+bxBase)/2, midY-34);
+  sctx.fillText('r', (ax+ex)/2, midY-34);
+
+  // arrow showing displacement
+  sctx.strokeStyle = '#C0533F'; sctx.lineWidth=1;
+  sctx.setLineDash([3,3]);
+  sctx.beginPath(); sctx.moveTo(bxBase, midY-30); sctx.lineTo(bxBase, midY+30); sctx.stroke();
+  sctx.setLineDash([]);
+}
+
+function drawTrace(){
+  resizeCanvas(traceCanvas, tctx);
+  const w = traceCanvas.clientWidth, h = traceCanvas.clientHeight;
+  tctx.clearRect(0,0,w,h);
+
+  // axis
+  tctx.strokeStyle = '#E7E2D4'; tctx.lineWidth=1;
+  tctx.beginPath(); tctx.moveTo(0,h/2); tctx.lineTo(w,h/2); tctx.stroke();
+
+  // trace
+  tctx.strokeStyle = '#C0533F'; tctx.lineWidth=2;
+  tctx.beginPath();
+  const n = state.traceData.length;
+  for(let i=0;i<n;i++){
+    const px = w - (n-1-i)*(w/200);
+    const py = h/2 - state.traceData[i]*(h*0.42);
+    if(i===0) tctx.moveTo(px,py); else tctx.lineTo(px,py);
+  }
+  tctx.stroke();
+
+  tctx.fillStyle = '#6B7280'; tctx.font='11px Courier New'; tctx.textAlign='left';
+  tctx.fillText('x(t)  — 변위', 8, 14);
+}
+
+function loop(ts){
+  if(state.lastTs===null) state.lastTs = ts;
+  const dt = (ts - state.lastTs)/1000;
+  state.lastTs = ts;
+
+  if(state.running){
+    state.t += dt;
+  }
+  const phase = state.animOmega * state.t;
+  const x_norm = Math.cos(phase); // -1..1
+
+  drawScene(x_norm);
+
+  state.traceData.push(x_norm);
+  if(state.traceData.length>200) state.traceData.shift();
+  drawTrace();
+
+  requestAnimationFrame(loop);
+}
+
+// events
+Object.values(els).forEach(el=> el.addEventListener('input', compute));
+
+document.getElementById('toggle').addEventListener('click', (e)=>{
+  state.running = !state.running;
+  e.target.textContent = state.running ? '일시정지' : '재생';
+  e.target.classList.toggle('active', !state.running);
+});
+document.getElementById('reset').addEventListener('click', ()=>{
+  state.t = 0; state.traceData = [];
+});
+
+compute();
+requestAnimationFrame(loop);
+window.addEventListener('resize', ()=>{ resizeCanvas(sceneCanvas,sctx); resizeCanvas(traceCanvas,tctx); });
+</script>
+</body>
+</html>
